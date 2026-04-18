@@ -6,14 +6,16 @@ package src
 import "core:fmt"
 import "core:os"
 
-serialize :: proc(writer : ^Writer, data : Data) {
+serialize :: proc(writer : ^Writer, data : Value) {
     switch value in data {
         case nil:
             serialize_nil(writer)
         case bool:
             serialize_boolean(writer, value)
+        case i64:
+            serialize_integer(writer, value)
         case f64:
-            serialize_number(writer, value)
+            serialize_float(writer, value)
         case string:
             serialize_string(writer, value)
         case Array:
@@ -29,8 +31,12 @@ serialize_boolean :: proc(writer : ^Writer, value : bool) {
     writer_u8(writer, u8(Types.Boolean))
     writer_u8(writer, u8(value))
 }
-serialize_number :: proc(writer : ^Writer, value : f64) {
-    writer_u8(writer, u8(Types.Number))
+serialize_integer :: proc(writer : ^Writer, value : i64) {
+    writer_u8(writer, u8(Types.Integer))
+    writer_i64(writer, value)
+}
+serialize_float :: proc(writer : ^Writer, value : f64) {
+    writer_u8(writer, u8(Types.Float))
     writer_f64(writer, value)
 }
 serialize_string :: proc(writer : ^Writer, value : string) {
@@ -54,12 +60,14 @@ save :: proc(writer : ^Writer, path : string) {
     os.write_entire_file(path, writer.buffer[:])
 }
 
-deserialize :: proc(reader : ^Reader) -> Data {
+deserialize :: proc(reader : ^Reader) -> Value {
     opecode := Opecodes[reader_u8(reader)]
     #partial switch opecode {
         case .Boolean:
             return reader_u8(reader) != 0
-        case .Number:
+        case .Integer:
+            return reader_i64(reader)
+        case .Float:
             return reader_f64(reader)
         case .String:
             return transmute(string)reader_slice(reader)
@@ -92,8 +100,13 @@ deserialize_boolean :: proc(reader : ^Reader) -> (Maybe(bool), bool) {
     _ = reader_u8(reader)
     return reader_u8(reader) != 0, true
 }
-deserialize_number :: proc(reader : ^Reader) -> (Maybe(f64), bool) {
-    if reader_peek(reader) != u8(Types.Number) do return nil, false
+deserialize_integer :: proc(reader : ^Reader) -> (Maybe(i64), bool) {
+    if reader_peek(reader) != u8(Types.Integer) do return nil, false
+    _ = reader_u8(reader)
+    return reader_i64(reader), true
+}
+deserialize_float :: proc(reader : ^Reader) -> (Maybe(f64), bool) {
+    if reader_peek(reader) != u8(Types.Float) do return nil, false
     _ = reader_u8(reader)
     return reader_f64(reader), true
 }
@@ -130,7 +143,7 @@ deserialize_object :: proc(reader : ^Reader) -> (Maybe(Object), bool) {
     _ = reader_u8(reader)
     return object, true
 }
-open :: proc(path : string) -> Data {
+open :: proc(path : string) -> Value {
     content, exist := os.read_entire_file(path)
     if exist {
         reader := new_reader(content)

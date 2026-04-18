@@ -3,14 +3,16 @@ package src
 Types :: enum u8 {
     Nil,
     Boolean,
-    Number,
+    Integer,
+    Float,
     String,
     Array,
     Object,
 }
 
-Data :: union {
+Value :: union {
     bool,
+    i64,
     f64,
     string,
     Array,
@@ -18,12 +20,12 @@ Data :: union {
 }
 
 Array:: struct{
-    elements : [dynamic]Data
+    elements : [dynamic]Value
 }
 new_array :: proc() -> Array {
-    return {make_dynamic_array([dynamic]Data)}
+    return {make_dynamic_array([dynamic]Value)}
 }
-array_append :: proc(self : ^Array, data : Data) {
+array_append :: proc(self : ^Array, data : Value) {
     append(&self.elements, data)
 }
 array_remove :: proc(self : ^Array, index : uint) {
@@ -31,19 +33,19 @@ array_remove :: proc(self : ^Array, index : uint) {
 }
 
 Object :: struct{
-    elements : map[string]Data
+    elements : map[string]Value
 }
 new_object :: proc() -> Object {
-    return {make_map(map[string]Data)}
+    return {make_map(map[string]Value)}
 }
 //create a new key or set new value
-object_set :: proc(self : ^Object, key : string, value : Data) {
+object_set :: proc(self : ^Object, key : string, value : Value) {
     self.elements[key] = value
 }
 //get key data, if not exist key return nil
-object_get :: proc(self : ^Object, key : string) -> Data {
-    if data, ok := self.elements[key]; ok do return data
-    return nil
+object_get :: proc(self : ^Object, key : string) -> (Value, bool) {
+    if data, ok := self.elements[key]; ok do return data, true
+    return nil, false
 }
 //remove key
 object_remove :: proc(self : ^Object, key : string) {
