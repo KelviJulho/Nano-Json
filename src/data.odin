@@ -7,7 +7,6 @@ Types :: enum u8 {
     String,
     Array,
     Object,
-    End,
 }
 
 Data :: union {

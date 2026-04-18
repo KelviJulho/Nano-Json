@@ -107,7 +107,11 @@ deserialize_array :: proc(reader : ^Reader) -> (Maybe(Array), bool) {
     _ = reader_u8(reader)
     
     array := new_array()
-    for reader_can_consume(reader) && reader_peek(reader) != u8(Types.End) do array_append(&array, deserialize(reader))
+    length := reader_u16(reader)
+    for _ in 0..<length {
+        if !reader_can_consume(reader) do break
+        array_append(&array, deserialize(reader))
+    }
 
     _ = reader_u8(reader)
     return array, true
@@ -117,7 +121,11 @@ deserialize_object :: proc(reader : ^Reader) -> (Maybe(Object), bool) {
     _ = reader_u8(reader)
     
     object := new_object()
-    for reader_can_consume(reader) && reader_peek(reader) != u8(Types.End) do object_set(&object, deserialize(reader).(string), deserialize(reader))
+    length := reader_u16(reader)
+    for _ in 0..<length {
+        if !reader_can_consume(reader) do break
+        object_set(&object, deserialize(reader).(string), deserialize(reader))
+    }
 
     _ = reader_u8(reader)
     return object, true
