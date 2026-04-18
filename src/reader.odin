@@ -83,6 +83,13 @@ reader_slice :: proc(self : ^Reader) -> []u8 {
 
     return bytes[:]
 }
-reader_string :: proc(self : ^Reader) -> string {
-    return string(reader_slice(self))
+reader_undelimited_slice :: proc(self : ^Reader, length : uint) -> []u8 {
+    bytes := make_dynamic_array([dynamic]u8)
+
+    for _ in 0..<length {
+        if !reader_can_consume(self) do break
+        append(&bytes, reader_u8(self))
+    }
+
+    return bytes[:]
 }

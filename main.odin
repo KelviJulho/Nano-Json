@@ -1,22 +1,31 @@
 package main
 
+import "core:os"
 import "core:fmt"
 import "src"
 
 main :: proc() {
-    body := src.new_object()
-    src.object_set(&body, "name", "kelvi")
-    src.object_set(&body, "age", 24)
-    
-    src.serializer_file("main.njson", body)
+    writer := src.new_writer()
+    arr := src.new_array()
+    src.array_append(&arr, "kelvi")
 
+    obj := src.new_object()
 
-    data := src.deserializer_file("main.njson")
-    fmt.println(src.object_get(&data.(src.Object), "age"))
+    col := src.new_array()
+    src.array_append(&col, "RED")
+    src.array_append(&col, "YELLOW")
+    src.array_append(&col, "PURPLE")
+    src.object_set(&obj, "colors", col)
 
-    src.object_set(&body, "favorite_color", "all")
-    src.serializer_file("main.njson", body)
+    foo := src.new_array()
+    src.array_append(&foo, "BREAD")
+    src.array_append(&foo, "APPLE")
+    src.array_append(&foo, "COOKIE")
+    src.object_set(&obj, "foods", foo)
 
-    data2 := src.deserializer_file("main.njson")
-    fmt.println(src.object_get(&data2.(src.Object), "favorite_color"))
+    src.array_append(&arr, obj)
+    src.serialize_array(&writer, arr)
+    src.save(&writer, "main.njson")
+
+    fmt.printf("%v", src.open("main.njson"))
 }

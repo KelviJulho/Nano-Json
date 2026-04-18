@@ -1,141 +1,132 @@
-#+feature dynamic-literals
+//This is a serializer; it serializes data by writing to bytes and uses "opcodes" like a virtual machine. 
+//I call it "NanoJson," but it has nothing to do with "JSON"—it just works like "JSON," being able to serialize numbers, arrays, objects, and more!
 
 package src
 
 import "core:fmt"
 import "core:os"
 
-Opecodes :: enum u8 {
-    Nil,
-    Boolean,
-    Number,
-    String,
-    Array,
-    Object,
-    End,
-}
-Instructions := map[u8]Opecodes{
-    0 = .Nil,
-    1 = .Boolean,
-    2 = .Number,
-    3 = .String,
-    4 = .Array,
-    5 = .Object,
-    6 = .End,
-}
-
-Array:: struct{
-    elements : [dynamic]Data
-}
-new_array :: proc() -> Array {
-    return {make_dynamic_array([dynamic]Data)}
-}
-array_append :: proc(self : ^Array, data : Data) {
-    append(&self.elements, data)
-}
-array_remove :: proc(self : ^Array, index : uint) {
-    ordered_remove(&self.elements, index)
-}
-
-Object :: struct{
-    elements : map[string]Data
-}
-new_object :: proc() -> Object {
-    return {make_map(map[string]Data)}
-}
-//create a new key or set new value
-object_set :: proc(self : ^Object, key : string, value : Data) {
-    self.elements[key] = value
-}
-//get key data, if not exist key return nil
-object_get :: proc(self : ^Object, key : string) -> Data {
-    if data, ok := self.elements[key]; ok do return data
-    return nil
-}
-//remove key
-object_remove :: proc(self : ^Object, key : string) {
-    delete_key(&self.elements, key)
-}
-
-Data :: union {
-    bool,
-    f64,
-    string,
-    Array,
-    Object,
-}
-
-serializer :: proc(writer : ^Writer, data : Data) {
+serialize :: proc(writer : ^Writer, data : Data) {
     switch value in data {
         case nil:
-            writer_u8(writer, u8(Opecodes.Nil))
+            serialize_nil(writer)
         case bool:
-            writer_u8(writer, u8(Opecodes.Boolean))
-
-            writer_u8(writer, u8(value))
+            serialize_boolean(writer, value)
         case f64:
-            writer_u8(writer, u8(Opecodes.Number))
-
-            writer_f64(writer, value)
+            serialize_number(writer, value)
         case string:
-            writer_u8(writer, u8(Opecodes.String))
-
-            writer_string(writer, value)
+            serialize_string(writer, value)
         case Array:
-            writer_u8(writer, u8(Opecodes.Array))
-
-            for element in value.elements do serializer(writer, element)
-            
-            writer_u8(writer, u8(Opecodes.End))
+            serialize_array(writer, value)
         case Object:
-            writer_u8(writer, u8(Opecodes.Object))
-
-            for key, value in value.elements {
-                serializer(writer, key)
-                serializer(writer, value)
-            }
-
-            writer_u8(writer, u8(Opecodes.End))
+            serialize_object(writer, value)
     }
 }
-serializer_file :: proc(path : string, data : Data) {
-    writer := new_writer()
-    serializer(&writer, data)
-
+serialize_nil :: proc(writer : ^Writer) {
+    writer_u8(writer, u8(Types.Nil))
+}
+serialize_boolean :: proc(writer : ^Writer, value : bool) {
+    writer_u8(writer, u8(Types.Boolean))
+    writer_u8(writer, u8(value))
+}
+serialize_number :: proc(writer : ^Writer, value : f64) {
+    writer_u8(writer, u8(Types.Number))
+    writer_f64(writer, value)
+}
+serialize_string :: proc(writer : ^Writer, value : string) {
+    writer_u8(writer, u8(Types.String))
+    writer_slice(writer, transmute([]u8)value)
+}
+serialize_array :: proc(writer : ^Writer, value : Array) {
+    writer_u8(writer, u8(Types.Array))
+    writer_u16(writer, u16(len(value.elements)))
+    for element in value.elements do serialize(writer, element)
+}
+serialize_object :: proc(writer : ^Writer, value : Object) {
+    writer_u8(writer, u8(Types.Object))
+    writer_u16(writer, u16(len(value.elements)))
+    for key, value in value.elements {
+        serialize(writer, key)
+        serialize(writer, value)
+    }
+}
+save :: proc(writer : ^Writer, path : string) {
     os.write_entire_file(path, writer.buffer[:])
 }
 
-deserializer :: proc(reader : ^Reader) -> Data {
-    opecode := Instructions[reader_u8(reader)]
+deserialize :: proc(reader : ^Reader) -> Data {
+    opecode := Opecodes[reader_u8(reader)]
     #partial switch opecode {
-        case .Nil:
         case .Boolean:
-            return Data(reader_u8(reader) != 0)
+            return reader_u8(reader) != 0
         case .Number:
-            return Data(reader_f64(reader))
+            return reader_f64(reader)
         case .String:
-            return Data(reader_string(reader))
+            return transmute(string)reader_slice(reader)
         case .Array:
-            buffer := new_array()
-            for reader_can_consume(reader) && reader_peek(reader) != u8(Opecodes.End) do array_append(&buffer, deserializer(reader))
-
-            reader_u8(reader)
-
-            return buffer
+            array := new_array()
+            length := reader_u16(reader)
+            for _ in 0..<length {
+                if !reader_can_consume(reader) do break
+                array_append(&array, deserialize(reader))
+            }
+            return array
         case .Object:
-            buffer := new_object()
-            for reader_can_consume(reader) && reader_peek(reader) != u8(Opecodes.End) do object_set(&buffer, deserializer(reader).(string), deserializer(reader))
-
-            reader_u8(reader)
-
-            return buffer
+            object := new_object()
+            length := reader_u16(reader)
+            for _ in 0..<length {
+                if !reader_can_consume(reader) do break
+                object_set(&object, deserialize(reader).(string), deserialize(reader))
+            }
+            return object
     }
     return nil
 }
-deserializer_file :: proc(path : string) -> Data {
-    data, ok := os.read_entire_file(path)
-    assert(ok, fmt.aprintfln("error in open file '%s'", path))
+deserialize_nil :: proc(reader : ^Reader) -> bool {
+    if reader_peek(reader) != u8(Types.Nil) do return false
+    _ = reader_u8(reader)
+    return true
+}
+deserialize_boolean :: proc(reader : ^Reader) -> (Maybe(bool), bool) {
+    if reader_peek(reader) != u8(Types.Boolean) do return nil, false
+    _ = reader_u8(reader)
+    return reader_u8(reader) != 0, true
+}
+deserialize_number :: proc(reader : ^Reader) -> (Maybe(f64), bool) {
+    if reader_peek(reader) != u8(Types.Number) do return nil, false
+    _ = reader_u8(reader)
+    return reader_f64(reader), true
+}
+deserialize_string :: proc(reader : ^Reader) -> (Maybe(string), bool) {
+    if reader_peek(reader) != u8(Types.String) do return nil, false
+    _ = reader_u8(reader)
+    return transmute(string)reader_slice(reader), true
+}
+deserialize_array :: proc(reader : ^Reader) -> (Maybe(Array), bool) {
+    if reader_peek(reader) != u8(Types.Array) do return nil, false
+    _ = reader_u8(reader)
+    
+    array := new_array()
+    for reader_can_consume(reader) && reader_peek(reader) != u8(Types.End) do array_append(&array, deserialize(reader))
 
-    reader := new_reader(data)
-    return deserializer(&reader)
+    _ = reader_u8(reader)
+    return array, true
+}
+deserialize_object :: proc(reader : ^Reader) -> (Maybe(Object), bool) {
+    if reader_peek(reader) != u8(Types.Object) do return nil, false
+    _ = reader_u8(reader)
+    
+    object := new_object()
+    for reader_can_consume(reader) && reader_peek(reader) != u8(Types.End) do object_set(&object, deserialize(reader).(string), deserialize(reader))
+
+    _ = reader_u8(reader)
+    return object, true
+}
+open :: proc(path : string) -> Data {
+    content, exist := os.read_entire_file(path)
+    if exist {
+        reader := new_reader(content)
+        return deserialize(&reader)
+    }
+    panic(fmt.tprintf("file '%s' not found", path))
 }

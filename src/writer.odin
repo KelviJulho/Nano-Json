@@ -45,7 +45,10 @@ writer_f64 :: proc(self : ^Writer, value : f64) {
     bits := transmute(u64)value
     writer_u64(self, bits)
 }
-writer_string :: proc(self : ^Writer, value : string) {
-    for index in 0..<len(value) do writer_u8(self, value[index])
+writer_slice :: proc(self : ^Writer, value : []u8) {
+    writer_undelimited_slice(self, value)
     writer_u8(self, 0x00)
+}
+writer_undelimited_slice :: proc(self : ^Writer, value : []u8) {
+    for index in 0..<len(value) do writer_u8(self, value[index])
 }
